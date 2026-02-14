@@ -6,17 +6,20 @@ import com.rohan.lovable.dto.auth.SignupRequest;
 import com.rohan.lovable.dto.auth.UserProfileResponse;
 import com.rohan.lovable.service.AuthService;
 import com.rohan.lovable.service.UserService;
+import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
+import lombok.experimental.FieldDefaults;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
 @RequestMapping("/api/auth")
 @RequiredArgsConstructor
+@FieldDefaults(makeFinal = true, level = AccessLevel.PRIVATE)
 public class AuthController {
 
-    private final AuthService authService;
-    private final UserService userService;
+    AuthService authService;
+    UserService userService;
 
     @PostMapping("/signup")
     public ResponseEntity<AuthResponse> signUp(@RequestBody SignupRequest request){
