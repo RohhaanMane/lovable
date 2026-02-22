@@ -10,6 +10,7 @@ import java.util.List;
 
 @Mapper(componentModel = "spring")
 public interface ProjectMapper {
+
     ProjectResponse toProjectResponse(Project project);
     ProjectSummaryResponse toProjectSummaryResponse(Project project);
     List<ProjectSummaryResponse> toProjectSummaryResponseList(List<Project> projects);
