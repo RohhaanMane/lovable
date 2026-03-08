@@ -1,6 +1,7 @@
 package com.rohan.lovable.repository;
 
 import com.rohan.lovable.entity.Project;
+import com.rohan.lovable.enums.ProjectRole;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -34,4 +35,21 @@ public interface ProjectRepository extends JpaRepository<Project, Long> {
             )
         """)
     Optional<Project> findAccessibleProjectById(@Param("projectId") Long projectId, @Param("userId")  Long userId);
+
+    @Query("""
+        SELECT p as project, pm.role as role
+            FROM Project p
+            JOIN ProjectMember pm ON pm.project.id = p.id
+            WHERE p.id = :projectId
+              AND pm.user.id = :userId
+              AND p.deletedAt IS NULL
+""")
+    Optional<ProjectWithRole> findAccessibleProjectByIdWithRole(@Param("projectId") Long projectId,
+                                                                @Param("userId") Long userId);
+
+    interface ProjectWithRole {
+        Project getProject();
+        ProjectRole getRole();
+    }
+
 }

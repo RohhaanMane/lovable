@@ -49,7 +49,7 @@ public class ProjectMemberController {
             @PathVariable Long projectId,
             @PathVariable Long memberId
     ) {
-        projectMemberService.deleteProjectMember(projectId, memberId);
+        projectMemberService.removeProjectMember(projectId, memberId);
         return ResponseEntity.noContent().build();
     }
 
