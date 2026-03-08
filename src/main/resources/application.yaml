@@ -1,3 +1,21 @@
 spring:
   application:
     name: lovable
+
+  datasource:
+    url: jdbc:postgresql://localhost:5432/testDB
+    username: postgres
+    password: 8963
+    driver-class-name: org.postgresql.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        format_sql: true
+
+jwt:
+  secret-key: as9b7aodlbjfkluosfd789ujeklfnlsduf90b8ha908w74tuqijvlckajdl
