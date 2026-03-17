@@ -5,13 +5,17 @@ import com.rohan.lovable.dto.subscription.CheckoutResponse;
 import com.rohan.lovable.dto.subscription.PortalResponse;
 import com.rohan.lovable.entity.Plan;
 import com.rohan.lovable.entity.User;
+import com.rohan.lovable.enums.SubscriptionStatus;
 import com.rohan.lovable.error.ResourceNotFoundException;
 import com.rohan.lovable.repository.PlanRepository;
 import com.rohan.lovable.repository.UserRepository;
 import com.rohan.lovable.security.AuthUtil;
 import com.rohan.lovable.service.PaymentProcessor;
+import com.rohan.lovable.service.SubscriptionService;
 import com.stripe.exception.StripeException;
+import com.stripe.model.Invoice;
 import com.stripe.model.StripeObject;
+import com.stripe.model.Subscription;
 import com.stripe.model.checkout.Session;
 import com.stripe.param.checkout.SessionCreateParams;
 import lombok.RequiredArgsConstructor;
@@ -28,6 +32,7 @@ public class StripePaymentProcessor implements PaymentProcessor {
     private final AuthUtil authUtil;
     private final PlanRepository planRepository;
     private final UserRepository userRepository;
+    private final SubscriptionService subscriptionService;
 
     @Value("${client.url}")
     private String frontendUrl;
@@ -80,6 +85,79 @@ public class StripePaymentProcessor implements PaymentProcessor {
 
     @Override
     public void handleWebhookEvent(String type, StripeObject stripeObject, Map<String, String> metadata) {
-        log.info(type);
+        log.debug("Handling Webhook Event {} ", type);
+
+        switch (type) {
+            case "checkout.session.completed" -> handleCheckoutSessionCompleted((Session) stripeObject, metadata);  // one-time on checkout completed
+            case "customer.subscription.updated" -> handleCustomerSubscriptionUpdated((Subscription) stripeObject); // when user cancels or upgrades or any updates
+            case "customer.subscription.deleted" -> handleCustomerSubscriptionDeleted((Subscription) stripeObject); //when subscription ends, revoke the subscription
+            case "invoice.paid" -> handleInvoicePaid((Invoice) stripeObject);  // when invoice is paid
+            case "invoice.payment_failed" -> handleInvoicePaymentFailed((Invoice) stripeObject); // when invoce is not paid mark as PAST_DUE
+            default -> log.debug("Ignoring the event: {}", type);
+        }
+    }
+
+    private void handleCheckoutSessionCompleted(Session session, Map<String, String> metadata){
+        if(session == null){
+            log.error("session object was null");
+            return;
+        }
+
+        Long userId = Long.parseLong(metadata.get("user_id"));
+        Long planId = Long.parseLong(metadata.get("plan_id"));
+
+        String subscriptionId = session.getSubscription();
+        String customerId = session.getCustomer();
+
+        User user = getUser(userId);
+
+        if(user.getStripeCustomerId() == null){
+            user.setStripeCustomerId(customerId);
+            userRepository.save(user);
+        }
+
+        subscriptionService.activateSubscription(userId, planId, subscriptionId, customerId);
+    }
+
+
+
+    private void handleCustomerSubscriptionUpdated(Subscription subscription){
+        if(subscription == null){
+            log.error("subscription object was null  inside handleCustomerSubscriptionUpdated");
+            return;
+        }
+
+        SubscriptionStatus status = mapStripeStatusToEnum(subscription.getStatus());
+    }
+
+
+
+    private void handleCustomerSubscriptionDeleted(Subscription subscription){
+
+    }
+
+    private void handleInvoicePaid(Invoice invoice){
+
+    }
+
+    private void handleInvoicePaymentFailed(Invoice invoice){
+
+    }
+    private User getUser(Long userId) {
+        return userRepository.findById(userId).orElseThrow(() -> new ResourceNotFoundException("User", userId.toString()));
+    }
+
+    private SubscriptionStatus mapStripeStatusToEnum(String status) {
+        return switch (status) {
+            case "active" -> SubscriptionStatus.ACTIVE;
+            case "trialing" -> SubscriptionStatus.TRIALING;
+            case "past_due", "unpaid", "paused", "incomplete_expired" -> SubscriptionStatus.PAST_DUE;
+            case "canceled" -> SubscriptionStatus.CANCELED;
+            case "incomplete" -> SubscriptionStatus.INCOMPLETE;
+            default -> {
+                log.warn("Unmapped Stripe status: {}", status);
+                yield null;
+            }
+        };
     }
 }
