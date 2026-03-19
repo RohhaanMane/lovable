@@ -13,9 +13,7 @@ import com.rohan.lovable.security.AuthUtil;
 import com.rohan.lovable.service.PaymentProcessor;
 import com.rohan.lovable.service.SubscriptionService;
 import com.stripe.exception.StripeException;
-import com.stripe.model.Invoice;
-import com.stripe.model.StripeObject;
-import com.stripe.model.Subscription;
+import com.stripe.model.*;
 import com.stripe.model.checkout.Session;
 import com.stripe.param.checkout.SessionCreateParams;
 import lombok.RequiredArgsConstructor;
@@ -23,6 +21,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
+import java.time.Instant;
 import java.util.Map;
 
 @Slf4j
@@ -128,21 +127,69 @@ public class StripePaymentProcessor implements PaymentProcessor {
         }
 
         SubscriptionStatus status = mapStripeStatusToEnum(subscription.getStatus());
+        if(status == null){
+            log.warn("Unknown status '{}' for subscription {}", subscription.getStatus(), subscription.getId());
+            return;
+        }
+
+        SubscriptionItem item = subscription.getItems().getData().get(0);
+        Instant periodStart = toInstant(item.getCurrentPeriodStart());
+        Instant periodEnd = toInstant(item.getCurrentPeriodEnd());
+
+        Long planId = resolvePlanId(item.getPrice());
+
+        subscriptionService.updateSubscription(
+                subscription.getId(), status, periodStart, periodEnd,
+                subscription.getCancelAtPeriodEnd(), planId
+        );
+
     }
+
 
 
 
     private void handleCustomerSubscriptionDeleted(Subscription subscription){
-
+        if (subscription == null) {
+            log.error("subscription object was null inside handleCustomerSubscriptionDeleted");
+            return;
+        }
+        subscriptionService.cancelSubscription(subscription.getId());
     }
 
     private void handleInvoicePaid(Invoice invoice){
+        String subId = extractSubscriptionId(invoice);
+        if(subId == null) return;
+
+        try {
+            Subscription subscription = Subscription.retrieve(subId); //sdk calling the Stripe server
+
+            var item = subscription.getItems().getData().get(0);
+
+            Instant periodStart = toInstant(item.getCurrentPeriodStart());
+            Instant periodEnd = toInstant(item.getCurrentPeriodEnd());
+
+            subscriptionService.renewSubscriptionPeriod(
+                    subId,
+                    periodStart,
+                    periodEnd
+            );
+
+        } catch (StripeException e) {
+            throw new RuntimeException(e);
+        }
+
 
     }
+
 
     private void handleInvoicePaymentFailed(Invoice invoice){
+        String subId = extractSubscriptionId(invoice);
+        if(subId == null) return;
 
+        subscriptionService.markSubscriptionPastDue(subId);
     }
+
+    // utility methods
     private User getUser(Long userId) {
         return userRepository.findById(userId).orElseThrow(() -> new ResourceNotFoundException("User", userId.toString()));
     }
@@ -160,4 +207,26 @@ public class StripePaymentProcessor implements PaymentProcessor {
             }
         };
     }
+
+    private Instant toInstant(Long epoch) {
+        return epoch != null ? Instant.ofEpochSecond(epoch) : null;
+    }
+
+    private Long resolvePlanId(Price price) {
+        if(price == null || price.getId() == null) return null;
+        return planRepository.findByStripePriceId(price.getId())
+                .map(Plan::getId)
+                .orElse(null);
+    }
+
+    private String extractSubscriptionId(Invoice invoice) {
+        var parent = invoice.getParent();
+        if(parent == null) return null;
+
+        var subDetails = parent.getSubscriptionDetails();
+        if(subDetails == null) return null;
+
+        return subDetails.getSubscription();
+    }
+
 }
