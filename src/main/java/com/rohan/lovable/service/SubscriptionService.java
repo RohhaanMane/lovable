@@ -9,7 +9,7 @@ import com.rohan.lovable.enums.SubscriptionStatus;
 import java.time.Instant;
 
 public interface SubscriptionService {
-    SubscriptionResponse getCurrentSubscription(Long userId);
+    SubscriptionResponse getCurrentSubscription();
 
     void activateSubscription(Long userId, Long planId, String subscriptionId, String customerId);
 
@@ -17,7 +17,7 @@ public interface SubscriptionService {
 
     void cancelSubscription(String id);
 
-    void renewSubscriptionPeriod(String subId, Instant periodStart, Instant periodEnd);
+    void renewSubscriptionPeriod(String gatewaySubscriptionId, Instant periodStart, Instant periodEnd);
 
-    void markSubscriptionPastDue(String subId);
+    void markSubscriptionPastDue(String gatewaySubscriptionId);
 }

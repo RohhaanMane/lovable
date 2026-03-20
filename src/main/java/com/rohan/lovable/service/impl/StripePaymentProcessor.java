@@ -6,6 +6,7 @@ import com.rohan.lovable.dto.subscription.PortalResponse;
 import com.rohan.lovable.entity.Plan;
 import com.rohan.lovable.entity.User;
 import com.rohan.lovable.enums.SubscriptionStatus;
+import com.rohan.lovable.error.BadRequestException;
 import com.rohan.lovable.error.ResourceNotFoundException;
 import com.rohan.lovable.repository.PlanRepository;
 import com.rohan.lovable.repository.UserRepository;
@@ -78,8 +79,26 @@ public class StripePaymentProcessor implements PaymentProcessor {
     }
 
     @Override
-    public PortalResponse openCustomerPortal(Long userId) {
-        return null;
+    public PortalResponse openCustomerPortal() {
+        Long userId = authUtil.getCurrentUserId();
+        User user = getUser(userId);
+
+        String stripeCustomerId = user.getStripeCustomerId();
+        if(stripeCustomerId == null ||  stripeCustomerId.isEmpty()){
+            throw new BadRequestException("User does not have a Stripe Customer Id, UserId:"+userId);
+        }
+        try {
+            var portalSession = com.stripe.model.billingportal.Session.create(
+                    com.stripe.param.billingportal.SessionCreateParams.builder()
+                            .setCustomer(stripeCustomerId)
+                            .setReturnUrl(frontendUrl)
+                            .build()
+            );
+
+            return new PortalResponse(portalSession.getUrl());
+        } catch (StripeException e) {
+            throw new RuntimeException(e);
+        }
     }
 
     @Override
@@ -157,11 +176,11 @@ public class StripePaymentProcessor implements PaymentProcessor {
     }
 
     private void handleInvoicePaid(Invoice invoice){
-        String subId = extractSubscriptionId(invoice);
-        if(subId == null) return;
+        String gatewaySubscriptionId = extractSubscriptionId(invoice);
+        if(gatewaySubscriptionId == null) return;
 
         try {
-            Subscription subscription = Subscription.retrieve(subId); //sdk calling the Stripe server
+            Subscription subscription = Subscription.retrieve(gatewaySubscriptionId); //sdk calling the Stripe server
 
             var item = subscription.getItems().getData().get(0);
 
@@ -169,7 +188,7 @@ public class StripePaymentProcessor implements PaymentProcessor {
             Instant periodEnd = toInstant(item.getCurrentPeriodEnd());
 
             subscriptionService.renewSubscriptionPeriod(
-                    subId,
+                    gatewaySubscriptionId,
                     periodStart,
                     periodEnd
             );
@@ -183,10 +202,10 @@ public class StripePaymentProcessor implements PaymentProcessor {
 
 
     private void handleInvoicePaymentFailed(Invoice invoice){
-        String subId = extractSubscriptionId(invoice);
-        if(subId == null) return;
+        String gatewaySubscriptionId = extractSubscriptionId(invoice);
+        if(gatewaySubscriptionId == null) return;
 
-        subscriptionService.markSubscriptionPastDue(subId);
+        subscriptionService.markSubscriptionPastDue(gatewaySubscriptionId);
     }
 
     // utility methods
